@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_system.h"
-#include "esp_spi_flash.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_http_server.h"
@@ -12,15 +11,30 @@
 #include "driver/gpio.h"
 #include "esp_camera.h"
 #include "esp_spiffs.h"
+#include "spi_flash_mmap.h"
 
 // Wi-Fi credentials
 #define WIFI_SSID "Room"
 #define WIFI_PASS "AspireE15"
 
 // Camera configuration
-#define CAMERA_PIXEL_FORMAT PIXFORMAT_JPEG
-#define CAMERA_FRAME_SIZE FRAMESIZE_VGA
-#define CAMERA_FB_COUNT 1
+#define CAM_PIN_PWDN -1  // power down is not used
+#define CAM_PIN_RESET -1 // software reset will be performed
+#define CAM_PIN_XCLK 21
+#define CAM_PIN_SIOD 26
+#define CAM_PIN_SIOC 27
+
+#define CAM_PIN_D7 35
+#define CAM_PIN_D6 34
+#define CAM_PIN_D5 39
+#define CAM_PIN_D4 36
+#define CAM_PIN_D3 19
+#define CAM_PIN_D2 18
+#define CAM_PIN_D1 5
+#define CAM_PIN_D0 4
+#define CAM_PIN_VSYNC 25
+#define CAM_PIN_HREF 23
+#define CAM_PIN_PCLK 22
 
 static const char *TAG = "CameraApp";
 
@@ -31,13 +45,6 @@ esp_err_t file_get_handler(httpd_req_t *req);
 
 void app_main(void)
 {
-    size_t psram_size = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-    if (psram_size > 0) {
-        ESP_LOGI("PSRAM", "PSRAM is available: %d bytes", psram_size);
-    } else {
-        ESP_LOGE("PSRAM", "No PSRAM available");
-    }
-
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -61,31 +68,40 @@ void app_main(void)
         return;
     }
 
+    // Configure GPIO for camera power
+    gpio_reset_pin(GPIO_NUM_32);
+    gpio_set_direction(GPIO_NUM_32, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_32, 1);
+    vTaskDelay(100 / portTICK_PERIOD_MS); // Wait for camera to power up
+
     // Initialize the camera
     camera_config_t camera_config = {
-        .pin_pwdn = -1,
-        .pin_reset = -1,
-        .pin_xclk = 0,
-        .pin_sscb_sda = 26,
-        .pin_sscb_scl = 27,
-        .pin_d7 = 35,
-        .pin_d6 = 34,
-        .pin_d5 = 39,
-        .pin_d4 = 36,
-        .pin_d3 = 21,
-        .pin_d2 = 19,
-        .pin_d1 = 18,
-        .pin_d0 = 5,
-        .pin_vsync = 25,
-        .pin_href = 23,
-        .pin_pclk = 22,
+        .pin_pwdn = CAM_PIN_PWDN,
+        .pin_reset = CAM_PIN_RESET,
+        .pin_xclk = CAM_PIN_XCLK,
+        .pin_sccb_sda = CAM_PIN_SIOD,
+        .pin_sccb_scl = CAM_PIN_SIOC,
+        .pin_d7 = CAM_PIN_D7,
+        .pin_d6 = CAM_PIN_D6,
+        .pin_d5 = CAM_PIN_D5,
+        .pin_d4 = CAM_PIN_D4,
+        .pin_d3 = CAM_PIN_D3,
+        .pin_d2 = CAM_PIN_D2,
+        .pin_d1 = CAM_PIN_D1,
+        .pin_d0 = CAM_PIN_D0,
+        .pin_vsync = CAM_PIN_VSYNC,
+        .pin_href = CAM_PIN_HREF,
+        .pin_pclk = CAM_PIN_PCLK,
         .xclk_freq_hz = 20000000,
         .ledc_timer = LEDC_TIMER_0,
         .ledc_channel = LEDC_CHANNEL_0,
-        .pixel_format = CAMERA_PIXEL_FORMAT,
-        .frame_size = CAMERA_FRAME_SIZE,
+        .pixel_format = PIXFORMAT_RGB565,
+        .frame_size = FRAMESIZE_QVGA,
         .jpeg_quality = 12,
-        .fb_count = CAMERA_FB_COUNT};
+        .fb_count = 1,
+        .fb_location = CAMERA_FB_IN_PSRAM,
+        .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
+    };
 
     ret = esp_camera_init(&camera_config);
     if (ret != ESP_OK)
@@ -94,49 +110,56 @@ void app_main(void)
         return;
     }
 
-    // Capture an image and save to SPIFFS
-    camera_fb_t *pic = esp_camera_fb_get();
-    if (pic)
-    {
-        FILE *file = fopen("/storage/image.jpg", "wb");
-        if (file)
-        {
-            fwrite(pic->buf, 1, pic->len, file);
-            fclose(file);
-            ESP_LOGI(TAG, "Image saved to /storage/image.jpg");
-        }
-        else
-        {
-            ESP_LOGE(TAG, "Failed to open file for writing");
-        }
-        esp_camera_fb_return(pic);
-    }
-    else
-    {
-        ESP_LOGE(TAG, "Failed to capture image");
-    }
+    // // Capture an image and save to SPIFFS
+    // camera_fb_t *pic = esp_camera_fb_get();
+    // if (pic)
+    // {
+    //     FILE *file = fopen("/storage/image.jpg", "wb");
+    //     if (file)
+    //     {
+    //         fwrite(pic->buf, 1, pic->len, file);
+    //         fclose(file);
+    //         ESP_LOGI(TAG, "Image saved to /storage/image.jpg");
+    //     }
+    //     else
+    //     {
+    //         ESP_LOGE(TAG, "Failed to open file for writing");
+    //     }
+    //     esp_camera_fb_return(pic);
+    // }
+    // else
+    // {
+    //     ESP_LOGE(TAG, "Failed to capture image");
+    // }
 
     // Initialize Wi-Fi
     wifi_init_sta();
 }
 
-// HTTP GET handler to serve the image
+// HTTP GET handler to serve the image file
 esp_err_t file_get_handler(httpd_req_t *req)
 {
-    FILE *file = fopen("/storage/image.jpg", "rb");
-    if (file == NULL)
+    FILE *f = fopen("/storage/image.jpg", "r");
+    if (f == NULL)
     {
         httpd_resp_send_404(req);
         return ESP_FAIL;
     }
 
-    char line[64];
-    while (fgets(line, sizeof(line), file) != NULL)
+    // Set the content type to image/jpeg
+    httpd_resp_set_type(req, "image/jpeg");
+
+    // Read and send the file content in chunks
+    char buffer[1024];
+    size_t read_bytes;
+    while ((read_bytes = fread(buffer, 1, sizeof(buffer), f)) > 0)
     {
-        httpd_resp_sendstr_chunk(req, line);
+        httpd_resp_send_chunk(req, buffer, read_bytes);
     }
-    fclose(file);
-    httpd_resp_sendstr_chunk(req, NULL); // Signal the end of the response
+    fclose(f);
+
+    // Signal the end of the response
+    httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
 }
 
@@ -151,7 +174,8 @@ httpd_handle_t start_webserver(void)
             .uri = "/image.jpg",
             .method = HTTP_GET,
             .handler = file_get_handler,
-            .user_ctx = NULL};
+            .user_ctx = NULL
+        };
         httpd_register_uri_handler(server, &file_uri);
     }
     return server;
