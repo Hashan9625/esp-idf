@@ -12,6 +12,7 @@
 #include "esp_camera.h"
 #include "esp_spiffs.h"
 #include "spi_flash_mmap.h"
+#include <nvs_flash.h>
 
 // Wi-Fi credentials
 #define WIFI_SSID "Room"
@@ -42,6 +43,7 @@ void wifi_init_sta(void);
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 httpd_handle_t start_webserver(void);
 esp_err_t file_get_handler(httpd_req_t *req);
+void takePhoto(void);
 
 void app_main(void)
 {
@@ -61,20 +63,31 @@ void app_main(void)
         .max_files = 5,
         .format_if_mount_failed = true};
 
-    ret = esp_vfs_spiffs_register(&spiffs_conf);
-    if (ret != ESP_OK)
+    esp_err_t result = esp_vfs_spiffs_register(&spiffs_conf);
+    if (result != ESP_OK)
     {
-        ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to load file (%s)", esp_err_to_name(result));
         return;
     }
+    
+    // Open the image file to check if it exists
+    FILE *f = fopen("/storage/dv.jpg", "r");
+    if (f == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to load dv.jpg");
+    }
+    else
+    {
+        fclose(f);
+    }
 
-    // Configure GPIO for camera power
-    gpio_reset_pin(GPIO_NUM_32);
-    gpio_set_direction(GPIO_NUM_32, GPIO_MODE_OUTPUT);
-    gpio_set_level(GPIO_NUM_32, 1);
-    vTaskDelay(100 / portTICK_PERIOD_MS); // Wait for camera to power up
+    // // Configure GPIO for camera power
+    // gpio_reset_pin(GPIO_NUM_32);
+    // gpio_set_direction(GPIO_NUM_32, GPIO_MODE_OUTPUT);
+    // gpio_set_level(GPIO_NUM_32, 1);
+    // vTaskDelay(100 / portTICK_PERIOD_MS); // Wait for camera to power up
 
-    // Initialize the camera
+  //  Initialize the camera
     camera_config_t camera_config = {
         .pin_pwdn = CAM_PIN_PWDN,
         .pin_reset = CAM_PIN_RESET,
@@ -110,36 +123,39 @@ void app_main(void)
         return;
     }
 
-    // // Capture an image and save to SPIFFS
-    // camera_fb_t *pic = esp_camera_fb_get();
-    // if (pic)
-    // {
-    //     FILE *file = fopen("/storage/image.jpg", "wb");
-    //     if (file)
-    //     {
-    //         fwrite(pic->buf, 1, pic->len, file);
-    //         fclose(file);
-    //         ESP_LOGI(TAG, "Image saved to /storage/image.jpg");
-    //     }
-    //     else
-    //     {
-    //         ESP_LOGE(TAG, "Failed to open file for writing");
-    //     }
-    //     esp_camera_fb_return(pic);
-    // }
-    // else
-    // {
-    //     ESP_LOGE(TAG, "Failed to capture image");
-    // }
 
     // Initialize Wi-Fi
     wifi_init_sta();
 }
 
+void takePhoto(void) {
+    // Capture an image and save to SPIFFS
+    camera_fb_t *pic = esp_camera_fb_get();
+    if (pic)
+    {
+        FILE *file = fopen("/storage/dv.jpg", "wb");
+        if (file)
+        {
+            fwrite(pic->buf, 1, pic->len, file);
+            fclose(file);
+            ESP_LOGI(TAG, "Image saved to /storage/dv.jpg");
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Failed to open file for writing");
+        }
+        esp_camera_fb_return(pic);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Failed to capture image");
+    }
+}
+
 // HTTP GET handler to serve the image file
 esp_err_t file_get_handler(httpd_req_t *req)
 {
-    FILE *f = fopen("/storage/image.jpg", "r");
+    FILE *f = fopen("/storage/dv.jpg", "r");
     if (f == NULL)
     {
         httpd_resp_send_404(req);
@@ -171,7 +187,7 @@ httpd_handle_t start_webserver(void)
     if (httpd_start(&server, &config) == ESP_OK)
     {
         httpd_uri_t file_uri = {
-            .uri = "/image.jpg",
+            .uri = "/dv.jpg",
             .method = HTTP_GET,
             .handler = file_get_handler,
             .user_ctx = NULL
