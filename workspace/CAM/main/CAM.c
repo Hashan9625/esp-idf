@@ -62,15 +62,15 @@ static camera_config_t camera_config = {
     .pin_vsync = CAM_PIN_VSYNC,
     .pin_href = CAM_PIN_HREF,
     .pin_pclk = CAM_PIN_PCLK,
-    .xclk_freq_hz = 20000000,
+    .xclk_freq_hz = 15000000,
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
-    .pixel_format = PIXFORMAT_JPEG,
-    .frame_size = FRAMESIZE_SXGA,
-    .jpeg_quality = 12,
-    .fb_count = 1,
+    .pixel_format = PIXFORMAT_GRAYSCALE,
+    .frame_size = FRAMESIZE_96X96,
+    .jpeg_quality = 10,
+    .fb_count = 2,
     .fb_location = CAMERA_FB_IN_PSRAM,
-    .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
+    //.grab_mode = CAMERA_GRAB_WHEN_EMPTY,
 };
 
 static esp_err_t init_camera(void)
@@ -150,12 +150,14 @@ void takePhoto(void)
     {
         ESP_LOGI(TAG, "Picture taken! Its size was: %zu bytes", pic->len);
 
-        FILE *file = fopen("/storage/dv.jpg", "wb");
+        FILE *file = fopen("/storage/dv.pgm", "wb");
         if (file)
         {
+            // Write the PGM header
+            fprintf(file, "P5\n%d %d\n255\n", 96, 96);
             fwrite(pic->buf, 1, pic->len, file);
             fclose(file);
-            ESP_LOGI(TAG, "Image saved to /storage/dv.jpg");
+            ESP_LOGI(TAG, "Image saved to /storage/dv.pgm");
         }
         else
         {
@@ -169,20 +171,26 @@ void takePhoto(void)
     }
 }
 
+
 // HTTP GET handler to serve the image file
 esp_err_t file_get_handler(httpd_req_t *req)
 {
     takePhoto();
 
-    FILE *f = fopen("/storage/dv.jpg", "r");
+    FILE *f = fopen("/storage/dv.pgm", "r");
     if (f == NULL)
     {
         httpd_resp_send_404(req);
         return ESP_FAIL;
     }
 
-    // Set the content type to image/jpeg
-    httpd_resp_set_type(req, "image/jpeg");
+    // Set the content type to PGM
+    httpd_resp_set_type(req, "image/x-portable-graymap");
+
+    // Write the PGM header
+    char header[32];
+    int header_len = snprintf(header, sizeof(header), "P5\n%d %d\n255\n", 96, 96);
+    httpd_resp_send_chunk(req, header, header_len);
 
     // Read and send the file content in chunks
     char buffer[1024];
@@ -197,6 +205,7 @@ esp_err_t file_get_handler(httpd_req_t *req)
     httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
 }
+
 
 // Function to start the HTTP server
 httpd_handle_t start_webserver(void)
