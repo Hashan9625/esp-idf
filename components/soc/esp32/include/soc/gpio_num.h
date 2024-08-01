@@ -17,7 +17,7 @@ typedef enum {
     GPIO_NUM_NC = -1,   /*!< Use to signal not connected to S/W */
     GPIO_NUM_0 = 0,     /*!< GPIO0, input and output */
     GPIO_NUM_1 = 1,     /*!< GPIO1, input and output */
-    GPIO_NUM_2 = 2,     /*!< GPIO2, input and output */
+    GPIO_NUM_2 = 2,     /*!< GPIO2, input and output built-in LED */
     GPIO_NUM_3 = 3,     /*!< GPIO3, input and output */
     GPIO_NUM_4 = 4,     /*!< GPIO4, input and output */
     GPIO_NUM_5 = 5,     /*!< GPIO5, input and output */
@@ -36,8 +36,8 @@ typedef enum {
     GPIO_NUM_18 = 18,   /*!< GPIO18, input and output */
     GPIO_NUM_19 = 19,   /*!< GPIO19, input and output */
     GPIO_NUM_20 = 20,   /*!< GPIO20, input and output */
-    GPIO_NUM_21 = 21,   /*!< GPIO21, input and output */
-    GPIO_NUM_22 = 22,   /*!< GPIO22, input and output */
+    GPIO_NUM_21 = 21,   /*!< GPIO21, input and output SDA*/
+    GPIO_NUM_22 = 22,   /*!< GPIO22, input and output SCL*/
     GPIO_NUM_23 = 23,   /*!< GPIO23, input and output */
     GPIO_NUM_25 = 25,   /*!< GPIO25, input and output */
     GPIO_NUM_26 = 26,   /*!< GPIO26, input and output */
