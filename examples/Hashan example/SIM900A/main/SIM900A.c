@@ -11,7 +11,9 @@ static const int RX_BUF_SIZE = 1024;
 #define TXD_PIN (GPIO_NUM_4)
 #define RXD_PIN (GPIO_NUM_5)
 #define BUTTON_PIN GPIO_NUM_14 // Button connected to GPIO 14
+#define DEBOUNCE_DELAY_MS 50
 
+static uint32_t last_interrupt_time = 0;
 QueueHandle_t buttonQueue;
 
 void initUART(void) {
@@ -30,13 +32,19 @@ void initUART(void) {
 
 void button_isr_handler(void *arg) {
     uint32_t gpio_num = (uint32_t)arg;
-    xQueueSendFromISR(buttonQueue, &gpio_num, NULL);
+    uint32_t current_time = xTaskGetTickCountFromISR() * portTICK_PERIOD_MS;
+
+    if ((current_time - last_interrupt_time) > DEBOUNCE_DELAY_MS) {
+        xQueueSendFromISR(buttonQueue, &gpio_num, NULL);
+        last_interrupt_time = current_time;
+    }
 }
+
 
 void initGPIO(void) {
     gpio_config_t io_conf;
     // Configure button pin as input
-    io_conf.intr_type = GPIO_INTR_POSEDGE; // Trigger on the rising edge
+    io_conf.intr_type = GPIO_INTR_NEGEDGE; // Trigger on the rising edge
     io_conf.mode = GPIO_MODE_INPUT;
     io_conf.pin_bit_mask = (1ULL << BUTTON_PIN);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE; // Disable pull-down
@@ -103,6 +111,10 @@ static void button_task(void *arg) {
             ESP_LOGI("BUTTON_TASK", "Button pressed, sending SMS...");
             tx_task(NULL);
         }
+
+         // Get the current number of items in the queue
+        UBaseType_t itemsInQueue = uxQueueMessagesWaiting(buttonQueue);
+        ESP_LOGI("BUTTON_TASK", "Number of items in buttonQueue: %d", itemsInQueue);
     }
 }
 
